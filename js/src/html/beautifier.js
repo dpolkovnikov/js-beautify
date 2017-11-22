@@ -264,8 +264,12 @@ function Beautifier(html_source, options, js_beautify, css_beautify) {
                     // {{something}} should get treated as content, except:
                     // {{else}} specifically behaves like {{#if}} and {{/if}}
                     var peek3 = this.input.substr(this.pos, 3);
-                    if (peek3 === '{{#' || peek3 === '{{/') {
+                    var peek4 = this.input.substr(this.pos, 4);
+                    if (peek4 !== '{{>@' && (peek3 === '{{#' || peek3 === '{{/' || peek4 === '{{#*' || peek4 === '{{#>' || peek4 === '{{~#' || peek4 === '{{~/')) {
                         // These are tags and not content.
+                        break;
+                    } else if (peek4 !== '{{>@' && (peek3 === '{{>' || peek4 === '{{~>')) {
+                        // These are single partials and not content.
                         break;
                     } else if (peek3 === '{{!') {
                         return [this.get_tag(), 'TK_TAG_HANDLEBARS_COMMENT'];
@@ -462,8 +466,20 @@ function Beautifier(html_source, options, js_beautify, css_beautify) {
 
                 if (indent_handlebars && !tag_start_char) {
                     if (content.length >= 2 && content[content.length - 1] === '{' && content[content.length - 2] === '{') {
-                        if (input_char === '#' || input_char === '/' || input_char === '!') {
+                        if (input_char === '#') {
+                            if (this.input.charAt(this.pos) === '*' || this.input.charAt(this.pos) === '>') {
+                                tag_start = this.pos - 4;
+                            } else {
+                                tag_start = this.pos - 3;
+                            }
+                        } else if (input_char === '/' || input_char === '!') {
                             tag_start = this.pos - 3;
+                        } else if (input_char === '~') {
+                            if (this.input.charAt(this.pos) === '#' || this.input.charAt(this.pos) === '/') {
+                                tag_start = this.pos - 4;
+                            } else {
+                                tag_start = this.pos - 3;
+                            }
                         } else {
                             tag_start = this.pos - 2;
                         }
@@ -491,7 +507,7 @@ function Beautifier(html_source, options, js_beautify, css_beautify) {
                 if (indent_handlebars && tag_start_char === '{' && content.length > 2 && content[content.length - 2] === '}' && content[content.length - 1] === '}') {
                     break;
                 }
-            } while (input_char !== '>');
+            } while (indent_handlebars ? (content[0] === '{' ? true : input_char !== '>') : input_char !== '>');
 
             var tag_complete = content.join('');
             var tag_index;
@@ -511,10 +527,30 @@ function Beautifier(html_source, options, js_beautify, css_beautify) {
             if (tag_complete.charAt(0) === '<' || !indent_handlebars) {
                 tag_offset = 1;
             } else {
-                tag_offset = tag_complete.charAt(2) === '#' ? 3 : 2;
+                if (tag_complete.charAt(2) === '#') {
+                    if (tag_complete.charAt(3) === '>' || tag_complete.charAt(3) === '*') {
+                        tag_offset = 4;
+                    } else {
+                        tag_offset = 3;
+                    }
+                } else if (tag_complete.charAt(2) === '~') {
+                    if (tag_complete.charAt(3) === '#') {
+                        tag_offset = 4;
+                    } else {
+                        tag_offset = 3;
+                    }
+                } else {
+                    tag_offset = 2;
+                }
             }
+
             var tag_check = tag_complete.substring(tag_offset, tag_index).toLowerCase();
-            if (tag_complete.charAt(tag_complete.length - 2) === '/' ||
+
+            if ((tag_complete.charAt(2) === '>' || (tag_complete.charAt(2) === '~' && tag_complete.charAt(3) === '>')) && tag_complete.charAt(2) !== '@' && tag_complete.charAt(3) !== '@') {
+                if (!peek) {
+                    this.tag_type = 'SINGLE';
+                }
+            } else if (tag_complete.charAt(tag_complete.length - 2) === '/' ||
                 this.Utils.in_array(tag_check, this.Utils.single_token)) { //if this tag name is a single tag type (either in the list or has a closing /)
                 if (!peek) {
                     this.tag_type = 'SINGLE';
